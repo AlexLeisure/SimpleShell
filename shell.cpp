@@ -21,7 +21,7 @@ int main()
         printf("> ");
         fgets(cmdline, MAXLINE, stdin);
         if (feof(stdin))
-        exit(0);
+            exit(0);
         /* Evaluate */
         eval(cmdline);
     }
@@ -134,41 +134,64 @@ void eval(char* cmdline){
         if(pid == 0){ // child
             // TODO: make sure this is right
             if(isPrev){
-                dup2(prevPipe[0], 0);
-                close(prevPipe[1]);
+                if(dup2(prevPipe[0], 0) < 0){
+                    fprintf(stderr, "Unable to duplicate file descriptors\n");
+                    exit(1);
+                }
+                if(close(prevPipe[1]) < 0){
+                    fprintf(stderr, "Unable to close the previous write pipe\n");
+                    exit(1);
+                }
             }
             if(isNext){
-                dup2(nextPipe[1], 1);
-                close(nextPipe[0]);
+                if(dup2(nextPipe[1], 1) < 0){
+                    fprintf(stderr, "Unable to duplicate file descriptors\n");
+                    exit(1);
+                }
+                if(close(nextPipe[0]) < 0){
+                    fprintf(stderr, "Unable to close the next read pipe\n");
+                    exit(1);
+                }
             }
             // call exec on argv[0] and argv
             if(execve(argv[0], argv, environ) < 0){
                 printf("%s: command not found.\n", argv[0]);
-                exit(0);
+                exit(1);
             }
-        }else if(pid > 0){ // parent
+            exit(0);
+        }
+        if(pid > 0){ // parent
             if(isPrev){
-                close(prevPipe[1]);
+                if(close(prevPipe[1]) < 0){
+                    fprintf(stderr, "Unable to close the previous write pipe\n");
+                    exit(1);
+                }
             }
             children.push_back(pid);
-        }else{
+        }
+        if(pid < 0){
             //failure
             fprintf(stderr, "Failed to fork\n");
             exit(1);
         }
     }
 
+    int status = 0;
     if(!ret.is_bg){
-        int status = 0;
-        printf("waiting...\n");
-        waitpid(-1, &status, 0);
-        // for(auto child : children){
-        //     waitpid(child, &status, 0);
-        //     if(status == 1) 
-        //         fprintf(stderr, "Child process [%i] finished with an error.\n", child);
-        // }
-        children.clear();
+        //while(wait(&status) > 0){}
+
+        auto it = begin(children);
+        while(it != end(children)){
+            waitpid(*it, &status, 0);
+            if(status == 1) 
+                fprintf(stderr, "Child process [%i] finished with an error.\n", *it);
+            children.erase(it);
+        }
+
     }else{
-        fprintf(stdout, "[%i]\n", getpid());
+        fprintf(stdout, "[%i]\n", pid);
     }
+
+    //reaps child processes in the background
+    while(waitpid(-1, &status, WNOHANG) > 0);
 }

@@ -15,3 +15,7 @@ $(PROG): $(OBJS)
 
 clean:
 	$(RM) $(OBJS) $(PROG).exe
+
+run: $(PROG).exe
+	./$(PROG).exe
+

@@ -160,43 +160,15 @@ void eval(char* cmdline){
 
     if(!ret.is_bg){
         int status = 0;
-        for(auto child : children){
-            waitpid(child, &status, 0);
-            if(status == 1) 
-                fprintf(stderr, "Child process [%i] finished with an error.\n", child);
-        }
+        printf("waiting...\n");
+        waitpid(-1, &status, 0);
+        // for(auto child : children){
+        //     waitpid(child, &status, 0);
+        //     if(status == 1) 
+        //         fprintf(stderr, "Child process [%i] finished with an error.\n", child);
+        // }
+        children.clear();
     }else{
         fprintf(stdout, "[%i]\n", getpid());
     }
-}
-
-int eval_line(char* cmdline){
-    char* argv[MAXARGS]; // arg list execve()
-    char buf[MAXLINE]; // modified cmd line
-    int bg; // background or foreground
-    pid_t pid; 
-    strcpy(buf, cmdline);
-    bg = parseline(buf, argv);
-    if(argv[0] == NULL)
-        return; // ignore empty
-    if(!builtin_command(argv)){
-        pid = fork();
-        if(pid == 0){
-            // child runs job
-            if(execve(argv[0], argv, environ) < 0){
-                printf("%s: command not found.\n", argv[0]);
-                exit(0);
-            }
-        }
-
-        // Parent waits for foreground job to terminate
-        if (!bg) {
-            int status;
-            if (waitpid(pid, &status, 0) < 0)
-                fprintf(stderr, "waitfg: waitpid error");
-        }else{
-            printf("%d %s", pid, cmdline);
-        }
-    }
-    return;
 }

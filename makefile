@@ -8,10 +8,10 @@ PROG=simpleShell
 all: $(PROG)
 
 $(PROG): $(OBJS)
-	$(CXX) -o $(PROG) $(OBJS)
+	$(CXX) -o $(PROG).exe $(OBJS)
 
 %.o: %.c
 	$(CXX) -c $(CPPFLAGS) $< -o $@
 
 clean:
-	$(RM) $(OBJS)
+	$(RM) $(OBJS) $(PROG).exe

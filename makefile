@@ -1,8 +1,8 @@
 CXX=g++
 RM=rm -f
-CPPFLAGS=-g --WALL
+CPPFLAGS=-g -Wall
 SRCS=shell.cpp parse.cpp
-OBJS=$(subst %.cpp,%.o,$(SRCS))
+OBJS=$(patsubst %.cpp,%.o,$(SRCS))
 PROG=simpleShell
 
 all: $(PROG)

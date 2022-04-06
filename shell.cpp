@@ -62,6 +62,14 @@ int parseline(char* buf, char** argv){
     return bg;
 }
 
+/**
+ * @brief Use a parsed command list to fill in argv. Inserts a null terminator.
+ * This is incredibly iffy code, but i'm not entirely sure if there's a better way of doing it without dynamically allocating new cstrings.
+ * Thought of making a local cstring and giving a pointer to that, but once the function is out of scope it'll be invalid.
+ * string.front() depends on c++11 so make sure to compile with the -std=c++11 flag
+ * @param cmd 
+ * @param argv 
+ */
 void fillArg(std::vector<std::string>& cmd, char** argv){
 
     for(int i=0; i<cmd.size(); i++){
@@ -73,74 +81,94 @@ void fillArg(std::vector<std::string>& cmd, char** argv){
     argv[cmd.size()] = NULL;
 }
 
+
 void eval(char* cmdline){
     char* argv[MAXARGS]; // arg list execve()
     char buf[MAXLINE]; // modified cmd line
     int bg; // background or foreground
+    pid_t pid; 
+    std::vector<pid_t> children;
 
     parsed_t ret = parse(cmdline);
-    if(ret.is_empty)
+    if(ret.is_empty) 
         return;
-    if(ret.is_error)
+    if(ret.is_error) {
         fprintf(stderr, ret.error.c_str());
+        return;
+    }
 
     // case: only one command 
     if(ret.cmd.size() == 1){
         fillArg(ret.cmd[0], argv);
+        if(builtin_command(argv)) 
+            return;
     }
 
+    // 0  ->  read end
+    // 1  ->  write end
+    int nextPipe[2] = {0};
+    int prevPipe[2] = {0};
     for(int i=0; i<ret.cmd.size(); i++){
+        fillArg(ret.cmd[i], argv);
 
+        bool isNext = false;
+        bool isPrev = false;
+
+        if(i != 0){
+            prevPipe[0] = nextPipe[0];
+            prevPipe[1] = nextPipe[1];
+            isPrev = true;
+        }
+        if(i != (ret.cmd.size()-1)){
+            if(!pipe(nextPipe)){
+                //success
+                isNext = true;
+            }else{
+                //error
+                //pipe() sets errno, so would have to go through process of getting errno and using strerror()
+                fprintf(stderr, "Unable to create pipe\n");
+                return;
+            }
+        }
+        pid = fork();
+        if(pid == 0){ // child
+            // TODO: make sure this is right
+            if(isPrev){
+                dup2(prevPipe[0], 0);
+                close(prevPipe[1]);
+            }
+            if(isNext){
+                dup2(nextPipe[1], 1);
+                close(nextPipe[0]);
+            }
+            // call exec on argv[0] and argv
+            if(execve(argv[0], argv, environ) < 0){
+                printf("%s: command not found.\n", argv[0]);
+                exit(0);
+            }
+        }else if(pid > 0){ // parent
+            if(isPrev){
+                close(prevPipe[1]);
+            }
+            children.push_back(pid);
+        }else{
+            //failure
+            fprintf(stderr, "Failed to fork\n");
+            exit(1);
+        }
+    }
+
+    if(!ret.is_bg){
+        int status = 0;
+        for(auto child : children){
+            waitpid(child, &status, 0);
+            if(status == 1) 
+                fprintf(stderr, "Child process [%i] finished with an error.\n", child);
+        }
+    }else{
+        fprintf(stdout, "[%i]\n", getpid());
     }
 }
-
-/*
-// eval() returns nothing
-//     argument: cmdline   // the string command line
-// begin
-//     set ret equal to the return value of a call to parse() on cmdline
-//     if ret is empty
-//         return
-//     if ret is error
-//         print error to stderr and return
-//     if ret contains only one command
-//         try to run it as a built in
-//         if suscessfull
-//             return
-//     for each single_command in ret.cmd
-//         create argv from single_command vector
-//             // make sure it is zero terminated
-//         declare next_pipe and prev_pipe
-//         set is_next to false
-//         set is_prev to false
-//         if single_command is NOT the first command in ret.cmd
-//             copy next_pipe to prev_pipe
-//             set is_prev to true
-//         if single_command is NOT the last command in ret.cmd
-//             call pipe() on next_pipe
-//             set is_next to true
-//         set pid equal to the return value of a call of fork()
-//         if pid is zero
-//             // I am the child
-//             if is_prev is true
-//                 call dup2() on prev_pipe[0] and 0 // 0 is stdin
-//                 call close() on prev_pipe[1]      // write end
-//             if is_next is true
-//                 call dup2() on next_pipe[1] and 1 // 1 is stdout
-//                 call close() on next_pipe[0]      // read end
-//             call exec on argv[0] and argv
-//             exit
-//         // parent
-//         if is_prev is true
-//             call close on prev_pipe[1]
-//         push pid onto children vector
-//     if ret is NOT background
-//         wait for each child in children vector to finish
-//     else
-//         print pid and command line
-        
-// END
-*/
 
 int eval_line(char* cmdline){
     char* argv[MAXARGS]; // arg list execve()
